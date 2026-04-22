@@ -8,6 +8,8 @@
 
 # Image URL to use all building/pushing image targets
 IMG ?= trustyai-guardrails-operator:latest
+# Platforms to build the image for
+PLATFORM ?= linux/amd64,linux/arm64,linux/s390x,linux/ppc64le
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -15,9 +17,6 @@ GOBIN=$(shell go env GOPATH)/bin
 else
 GOBIN=$(shell go env GOBIN)
 endif
-
-# CONTAINER_TOOL defines the container tool to be used for building images.
-CONTAINER_TOOL ?= docker
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 SHELL = /usr/bin/env bash -o pipefail
@@ -90,11 +89,11 @@ run: fmt vet ## Run the operator from your host.
 
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${IMG} .
+	docker buildx build --platform $(PLATFORM) -t ${IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
-	$(CONTAINER_TOOL) push ${IMG}
+	docker push ${IMG}
 
 ##@ Deployment
 
@@ -238,15 +237,17 @@ fetch-crds: ## Fetch CRDs and RBAC roles from all imported guardrails controller
 	@echo "✓ Fetch complete. CRDs in config/crd, RBAC in config/rbac"
 	@echo "Commit these files to your repository for offline/standalone use"
 
-# Generate the full set of manifests to deploy the TrustyAI Guardrails operator, with a customizable deployment namespace and operator image
+# Generate the full set of manifests to deploy the TrustyAI Guardrails operator, with a customizable deployment namespace, operator image, and NeMo Guardrails image
 OPERATOR_IMAGE ?= quay.io/trustyai/trustyai-guardrails-operator:latest
+NEMO_IMAGE ?= quay.io/trustyai/nemo-guardrails-dev:latest
 .PHONY: manifest-gen
 manifest-gen: kustomize ## Generate release manifest bundle with custom namespace and image.
-	@echo "Usage: make manifest-gen NAMESPACE=<namespace> OPERATOR_IMAGE=<image>"
-	@echo "Example: make manifest-gen NAMESPACE=my-namespace OPERATOR_IMAGE=quay.io/myorg/trustyai-guardrails-operator:latest"
+	@echo "Usage: make manifest-gen NAMESPACE=<namespace> OPERATOR_IMAGE=<image> NEMO_IMAGE=<image>"
+	@echo "Example: make manifest-gen NAMESPACE=my-namespace OPERATOR_IMAGE=quay.io/myorg/trustyai-guardrails-operator:latest NEMO_IMAGE=quay.io/trustyai/nemo-guardrails-dev:latest"
 	@mkdir -p release
 	@if [ -z "$(NAMESPACE)" ]; then echo "Error: NAMESPACE argument is required"; exit 1; fi
-	$(KUSTOMIZE) build config/default | sed "s|namespace: trustyai-guardrails-operator-system|namespace: $(NAMESPACE)|g" | sed "s|image: controller:latest|image: $(OPERATOR_IMAGE)|g" > release/trustyai_guardrails_bundle.yaml
+	$(KUSTOMIZE) build config/default | sed "s|namespace: trustyai-guardrails-operator-system|namespace: $(NAMESPACE)|g" | sed "s|image: controller:latest|image: $(OPERATOR_IMAGE)|g" | sed "s|nemo-guardrails-image: .*|nemo-guardrails-image: $(NEMO_IMAGE)|g" > release/trustyai_guardrails_bundle.yaml
 	@echo "✓ Release manifest generated at release/trustyai_guardrails_bundle.yaml"
 	@echo "  Namespace: $(NAMESPACE)"
-	@echo "  Image: $(OPERATOR_IMAGE)"
+	@echo "  Operator Image: $(OPERATOR_IMAGE)"
+	@echo "  NeMo Guardrails Image: $(NEMO_IMAGE)"
